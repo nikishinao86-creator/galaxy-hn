@@ -26,4 +26,156 @@
       text-align: center;
       pointer-events: none;
       z-index: 1;
-      opacity: 0.95
+      opacity: 0.95;
+      font-size: 14px;
+      text-shadow: 0 0 5px #000;
+    }
+  </style>
+</head>
+<body>
+  <!-- Информационная панель -->
+  <div id="info">🌌 Загрузка галактики...</div>
+
+  <script>
+    // Инициализация Telegram WebApp
+    const tg = Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // Получаем данные пользователя
+    const user = tg.initDataUnsafe.user;
+    const startParam = tg.initDataUnsafe.start_param; // например: gal_123456789
+
+    if (startParam) {
+      const refId = startParam.split('_')[1];
+      console.log('Пользователь пришёл по реферальной ссылке от:', refId);
+      // Здесь можно отправить на сервер: fetch('/api/join', { user.id, refId })
+    }
+
+    // Обновляем информацию
+    document.getElementById("info").textContent = `🌌 Добро пожаловать, ${user.first_name}!`;
+
+    // --- Three.js сцена ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000011);
+    document.body.appendChild(renderer.domElement);
+
+    // Звёздный фон (10 000 звёзд)
+    const starsGeometry = new THREE.BufferGeometry();
+    const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1 });
+
+    const starsVertices = [];
+    for (let i = 0; i < 10000; i++) {
+      const x = THREE.MathUtils.randFloatSpread(200);
+      const y = THREE.MathUtils.randFloatSpread(200);
+      const z = THREE.MathUtils.randFloatSpread(200);
+      starsVertices.push(x, y, z);
+    }
+
+    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+    const stars = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(stars);
+
+    // Центральная звезда — ты
+    const starGeometry = new THREE.SphereGeometry(1, 64, 64);
+    const starMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffd700,
+      emissive: 0xffa500,
+      emissiveIntensity: 1.5
+    });
+    const star = new THREE.Mesh(starGeometry, starMaterial);
+    scene.add(star);
+
+    // Загрузчик текстур
+    const textureLoader = new THREE.TextureLoader();
+
+    // Текстуры планет (из официального репозитория three.js)
+    const planetTextures = [
+      { name: "Earth",   color: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg",
+                        bump:  "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg" },
+      { name: "Mars",    color: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mars_1k_color.jpg",
+                        bump:  "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mars_1k_normal.jpg" },
+      { name: "Venus",   color: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/venus_surface.jpg" },
+      { name: "Jupiter", color: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/jupiter_1k.jpg" },
+      { name: "Neptune", color: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/neptune_1k.jpg" }
+    ];
+
+    // Планеты (рефералы 1-го уровня)
+    const planetCount = 5;
+    const planets = [];
+
+    for (let i = 0; i < planetCount; i++) {
+      const angle = (i / planetCount) * Math.PI * 2;
+      const radius = 7;
+
+      const texData = planetTextures[i % planetTextures.length];
+      const geometry = new THREE.SphereGeometry(0.6, 64, 64);
+
+      const material = new THREE.MeshPhongMaterial({
+        map: textureLoader.load(texData.color),
+        bumpMap: texData.bump ? textureLoader.load(texData.bump) : null,
+        bumpScale: 0.05,
+        specular: 0x333333,
+        shininess: 10
+      });
+
+      const planet = new THREE.Mesh(geometry, material);
+      planet.position.x = Math.cos(angle) * radius;
+      planet.position.z = Math.sin(angle) * radius;
+      scene.add(planet);
+
+      // Луны (рефералы 2-го уровня)
+      const moonCount = i < 3 ? 2 : 1;
+      for (let j = 0; j < moonCount; j++) {
+        const moonAngle = (j / moonCount) * Math.PI * 2;
+        const moonGeometry = new THREE.SphereGeometry(0.2, 32, 32);
+        const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+
+        moon.position.x = planet.position.x + Math.cos(moonAngle) * 1.2;
+        moon.position.z = planet.position.z + Math.sin(moonAngle) * 1.2;
+        scene.add(moon);
+      }
+
+      // Сохраняем для анимации
+      planets.push({
+        mesh: planet,
+        angle: angle,
+        speed: 0.003 + Math.random() * 0.003
+      });
+    }
+
+    // Камера
+    camera.position.z = 15;
+
+    // Анимация
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Вращение звезды (тебя)
+      star.rotation.y += 0.005;
+
+      // Движение планет по орбитам и вращение вокруг своей оси
+      planets.forEach(p => {
+        p.angle += p.speed;
+        p.mesh.position.x = Math.cos(p.angle) * 7;
+        p.mesh.position.z = Math.sin(p.angle) * 7;
+        p.mesh.rotation.y += 0.01;
+      });
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Адаптация под изменение размера экрана
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
