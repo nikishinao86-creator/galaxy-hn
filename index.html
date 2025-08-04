@@ -41,14 +41,6 @@
     tg.expand();
 
     const user = tg.initDataUnsafe.user;
-    const startParam = tg.initDataUnsafe.start_param;
-
-    if (startParam) {
-      const refId = startParam.split('_')[1];
-      console.log('Пришёл по рефералу:', refId);
-      // Здесь можно отправить на сервер
-    }
-
     document.getElementById("info").textContent = `🌌 ${user.first_name}, ваша галактика`;
 
     // --- Three.js сцена ---
@@ -88,14 +80,14 @@
     // Загрузчик текстур
     const textureLoader = new THREE.TextureLoader();
 
-    // Текстуры для уровней (можно расширить до 15)
-    const levelTextures = [
+    // Текстуры для 15 планет (по одной на уровень)
+    const planetTextures = [
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg",
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mars_1k_color.jpg",
-      "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/jupiter_1k.jpg",
-      "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/neptune_1k.jpg",
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/venus_surface.jpg",
+      "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/jupiter_1k.jpg",
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/saturn_1k.jpg",
+      "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/neptune_1k.jpg",
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/uranus_1k.jpg",
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mercury_1k_color.jpg",
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/pluto_1k_color.jpg",
@@ -107,16 +99,14 @@
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/jupiter_1k.jpg"
     ];
 
-    // Массив для хранения всех планет
+    // Массив для хранения планет
     const planets = [];
 
-    // Настройка: 15 уровней, до 5 планет на уровне
+    // Количество уровней
     const levels = 15;
-    const maxPlanetsPerLevel = 5;
 
-    // Радиусы орбит
     for (let level = 0; level < levels; level++) {
-      const orbitRadius = 4 + level * 3; // Каждый следующий уровень дальше
+      const orbitRadius = 4 + level * 3; // Каждая орбита дальше
 
       // Орбитальное кольцо
       const orbitGeometry = new THREE.RingGeometry(orbitRadius - 0.1, orbitRadius + 0.1, 32);
@@ -127,61 +117,58 @@
         side: THREE.DoubleSide
       });
       const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
-      orbit.rotation.x = Math.PI / 2; // Плоскость орбиты — горизонтальная
+      orbit.rotation.x = Math.PI / 2;
       scene.add(orbit);
 
-      // Количество планет на этом уровне (имитация)
-      const planetCount = Math.min(maxPlanetsPerLevel, level + 1); // растёт с уровнем
+      // Загрузка текстуры
+      const texture = textureLoader.load(planetTextures[level % planetTextures.length]);
+      const material = new THREE.MeshPhongMaterial({
+        map: texture,
+        bumpMap: level === 0 ? textureLoader.load("https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg") : null,
+        bumpScale: 0.05,
+        shininess: 10
+      });
 
-      for (let i = 0; i < planetCount; i++) {
-        const angle = (i / planetCount) * Math.PI * 2 + (level * 0.3); // Смещение по уровню
+      const planetGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+      const planet = new THREE.Mesh(planetGeometry, material);
 
-        // Текстура
-        const texUrl = levelTextures[level % levelTextures.length];
-        const material = new THREE.MeshPhongMaterial({
-          map: textureLoader.load(texUrl),
-          bumpMap: level === 0 ? textureLoader.load("https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg") : null,
-          bumpScale: 0.05,
-          shininess: 10
-        });
+      // Начальный угол (случайный, чтобы планеты не были в линии)
+      const angle = Math.random() * Math.PI * 2;
 
-        const planetGeometry = new THREE.SphereGeometry(0.4, 32, 32);
-        const planet = new THREE.Mesh(planetGeometry, material);
+      planet.position.x = Math.cos(angle) * orbitRadius;
+      planet.position.z = Math.sin(angle) * orbitRadius;
+      planet.position.y = 0;
+      scene.add(planet);
 
-        // Позиция на орбите
-        planet.position.x = Math.cos(angle) * orbitRadius;
-        planet.position.z = Math.sin(angle) * orbitRadius;
-        planet.position.y = 0;
-        scene.add(planet);
+      // Скорость вращения: чем дальше, тем медленнее
+      const speed = 0.004 - level * 0.0002; // от 0.004 до ~0.001
 
-        // Данные для анимации
-        planets.push({
-          mesh: planet,
-          radius: orbitRadius,
-          angle: angle,
-          speed: 0.005 + level * 0.001 // Чем дальше, тем медленнее
-        });
-      }
+      planets.push({
+        mesh: planet,
+        radius: orbitRadius,
+        angle: angle,
+        speed: Math.max(speed, 0.0005) // минимум, чтобы не стояли
+      });
     }
 
     // Камера: вид сверху
-    camera.position.set(0, 50, 0); // Сверху
+    camera.position.set(0, 50, 0);
     camera.lookAt(0, 0, 0);
-    camera.up.set(0, 0, 1); // Y — вверх
+    camera.up.set(0, 0, 1);
 
     // Анимация
     function animate() {
       requestAnimationFrame(animate);
 
       // Вращение звезды
-      star.rotation.y += 0.005;
+      star.rotation.y += 0.002; // медленнее
 
       // Вращение планет по орбитам
       planets.forEach(p => {
         p.angle += p.speed;
         p.mesh.position.x = Math.cos(p.angle) * p.radius;
         p.mesh.position.z = Math.sin(p.angle) * p.radius;
-        p.mesh.rotation.y += 0.01;
+        p.mesh.rotation.y += 0.005; // медленное вращение вокруг своей оси
       });
 
       renderer.render(scene, camera);
