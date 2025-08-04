@@ -17,7 +17,8 @@
       overflow: hidden;
       background: #000;
       color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: sans-serif;
+      cursor: default;
     }
     #info {
       position: absolute;
@@ -27,7 +28,6 @@
       pointer-events: none;
       z-index: 1;
       font-size: 14px;
-      color: #fff;
       text-shadow: 0 0 5px #000;
       font-weight: 500;
     }
@@ -49,7 +49,6 @@
     tg.expand();
 
     const user = tg.initDataUnsafe.user;
-    const startParam = tg.initDataUnsafe.start_param;
     document.getElementById("info").textContent = `🌌 ${user.first_name}, ваша сеть`;
 
     // --- Three.js сцена ---
@@ -120,23 +119,22 @@
       const baseSpeed = 0.002;
       const speed = baseSpeed + (referralsCount[level] / 100);
 
-      // Сохраняем данные
+      // Данные планеты
       planet.userData = {
         level: level + 1,
         referrals: referralsCount[level],
         radius: orbitRadius,
         angle: angle,
-        speed: Math.max(speed, 0.0005)
+        speed: Math.max(speed, 0.0005),
+        isHovered: false
       };
 
       planets.push(planet);
 
-      // Метка уровня (в DOM)
+      // Метка уровня
       const label = document.createElement('div');
       label.className = 'level-label';
       label.textContent = `L${level + 1}`;
-      label.style.left = '50%';
-      label.style.top = '50%';
       label.dataset.level = level;
       document.body.appendChild(label);
     }
@@ -149,7 +147,7 @@
     camera.lookAt(0, 0, 0);
     camera.up.set(0, 0, 1);
 
-    // --- Управление колёсиком ---
+    // --- Управление колёсиком (zoom) ---
     function handleWheel(event) {
       event.preventDefault();
       cameraZ += event.deltaY * 0.05;
@@ -158,20 +156,42 @@
     }
     renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
 
-    // --- Интерактив: клик по планете ---
+    // --- Raycaster для hover и клика ---
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    function onMouseClick(event) {
+    // Хранение планеты под курсором
+    let hoveredPlanet = null;
+
+    function onMouseMove(event) {
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
 
       const intersects = raycaster.intersectObjects(planets);
-      if (intersects.length > 0) {
-        const planet = intersects[0].object;
-        const data = planet.userData;
+      const planet = intersects.length > 0 ? intersects[0].object : null;
 
+      // Если навели на другую планету
+      if (planet !== hoveredPlanet) {
+        // Сброс предыдущей
+        if (hoveredPlanet) {
+          hoveredPlanet.userData.isHovered = false;
+          document.body.style.cursor = 'default';
+        }
+        // Установка новой
+        if (planet) {
+          hoveredPlanet = planet;
+          planet.userData.isHovered = true;
+          document.body.style.cursor = 'pointer';
+        } else {
+          hoveredPlanet = null;
+        }
+      }
+    }
+
+    function onMouseClick(event) {
+      if (hoveredPlanet) {
+        const data = hoveredPlanet.userData;
         tg.showPopup({
           title: `Уровень ${data.level}`,
           message: `Рефералы: ${data.referrals}\nУровень: ${data.level}`,
@@ -179,6 +199,8 @@
         });
       }
     }
+
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
     renderer.domElement.addEventListener('click', onMouseClick);
 
     // --- Анимация ---
@@ -188,25 +210,36 @@
       // Вращение звезды
       star.rotation.y += 0.002;
 
-      // Движение планет
+      // Обновление меток и вращения планет
       planets.forEach(planet => {
         const data = planet.userData;
-        data.angle += data.speed;
+
+        // Базовая скорость
+        let effectiveSpeed = data.speed;
+
+        // Замедление при приближении (чем ближе — тем медленнее)
+        const zoomFactor = 1 - (cameraZ - minZoom) / (maxZoom - minZoom);
+        effectiveSpeed *= (1 - zoomFactor * 0.8); // на max zoom — 80% замедления
+
+        // Полная остановка при наведении
+        if (data.isHovered) {
+          effectiveSpeed = 0;
+        }
+
+        // Обновление угла
+        data.angle += effectiveSpeed;
         planet.position.x = Math.cos(data.angle) * data.radius;
         planet.position.z = Math.sin(data.angle) * data.radius;
-        planet.rotation.y += 0.005;
+        planet.rotation.y += 0.005 * (effectiveSpeed / data.speed); // вращение вокруг оси тоже замедляется
       });
 
       renderer.render(scene, camera);
       updateLabels();
     }
 
-    // --- Обновление меток уровней (DOM) ---
+    // --- Обновление меток уровней ---
     function updateLabels() {
       const rect = renderer.domElement.getBoundingClientRect();
-      const cameraPos = camera.position.clone();
-      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-
       planets.forEach((planet, i) => {
         const label = document.querySelector(`.level-label[data-level="${i}"]`);
         if (!label) return;
@@ -216,8 +249,7 @@
         const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
         const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
 
-        // Проверяем, видна ли планета
-        const isInView = direction.dot(worldPos.sub(cameraPos).normalize()) > 0;
+        const isInView = camera.position.clone().sub(worldPos).dot(new THREE.Vector3(0, -1, 0)) > 0;
         label.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
         label.style.opacity = isInView ? 1 : 0;
       });
@@ -230,7 +262,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Запуск анимации
+    // Запуск
     animate();
   </script>
 </body>
