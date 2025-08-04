@@ -40,7 +40,6 @@
     tg.ready();
     tg.expand();
 
-    // Получаем данные пользователя
     const user = tg.initDataUnsafe.user;
     document.getElementById("info").textContent = `🌌 ${user.first_name}, ваша галактика`;
 
@@ -51,20 +50,6 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000011);
     document.body.appendChild(renderer.domElement);
-
-    // Звёздный фон
-    const starsGeometry = new THREE.BufferGeometry();
-    const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1 });
-    const starsVertices = [];
-    for (let i = 0; i < 10000; i++) {
-      const x = THREE.MathUtils.randFloatSpread(200);
-      const y = THREE.MathUtils.randFloatSpread(200);
-      const z = THREE.MathUtils.randFloatSpread(200);
-      starsVertices.push(x, y, z);
-    }
-    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
-    const stars = new THREE.Points(starsGeometry, starsMaterial);
-    scene.add(stars);
 
     // Центральная звезда — ты
     const starGeometry = new THREE.SphereGeometry(1, 64, 64);
@@ -82,8 +67,15 @@
     // Количество уровней
     const levels = 15;
 
-    // Имитация числа рефералов на каждом уровне (в будущем — с сервера)
+    // Имитация данных: сколько рефералов у каждой планеты
     const referralsCount = [3, 0, 7, 1, 12, 2, 5, 0, 8, 3, 9, 4, 6, 1, 10];
+
+    // Цвета для орбит
+    const orbitColors = [
+      0xffffff, 0x4488ff, 0x88ff44, 0xff8844, 0xffcc00,
+      0xcc00ff, 0x00ffff, 0xff66cc, 0x66ff66, 0x44aaff,
+      0xffaa00, 0xaa00aa, 0x00ccff, 0xcc6600, 0x9999ff
+    ];
 
     for (let level = 0; level < levels; level++) {
       const orbitRadius = 4 + level * 3;
@@ -91,9 +83,9 @@
       // Орбитальное кольцо
       const orbitGeometry = new THREE.RingGeometry(orbitRadius - 0.1, orbitRadius + 0.1, 32);
       const orbitMaterial = new THREE.MeshBasicMaterial({
-        color: 0x4444ff,
+        color: orbitColors[level],
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.4,
         side: THREE.DoubleSide
       });
       const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
@@ -117,15 +109,18 @@
 
       // Скорость вращения зависит от числа рефералов
       const baseSpeed = 0.002;
-      const speed = baseSpeed + (referralsCount[level] / 100); // чем больше рефералов — тем быстрее
+      const speed = baseSpeed + (referralsCount[level] / 100);
 
-      planets.push({
-        mesh: planet,
-        radius: orbitRadius,
+      // Добавляем данные в объект планеты
+      planet.userData = {
+        level: level + 1,
+        referrals: referralsCount[level],
         angle: angle,
-        speed: Math.max(speed, 0.0005),
-        refCount: referralsCount[level]
-      });
+        radius: orbitRadius,
+        speed: Math.max(speed, 0.0005)
+      };
+
+      planets.push(planet);
     }
 
     // --- Камера: вид сверху ---
@@ -133,8 +128,8 @@
     camera.lookAt(0, 0, 0);
     camera.up.set(0, 0, 1);
 
-    // --- Управление колёсиком мыши (zoom in/out) ---
-    let cameraZ = 50; // начальная дистанция
+    // --- Управление колёсиком мыши (zoom) ---
+    let cameraZ = 50;
     const minZoom = 20;
     const maxZoom = 100;
 
@@ -144,8 +139,38 @@
       cameraZ = Math.max(minZoom, Math.min(maxZoom, cameraZ));
       camera.position.y = cameraZ;
     }
-
     renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+
+    // --- Выбор планеты по клику ---
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function onMouseClick(event) {
+      // Нормализация координат мыши
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      // Проверка пересечений
+      const intersects = raycaster.intersectObjects(planets);
+
+      if (intersects.length > 0) {
+        const planet = intersects[0].object;
+        const data = planet.userData;
+
+        // Показываем профиль через Telegram UI
+        tg.showPopup({
+          title: `Планета уровня ${data.level}`,
+          message: `Рефералы: ${data.referrals}\nУровень: ${data.level}`,
+          buttons: [
+            { type: "ok" }
+          ]
+        });
+      }
+    }
+
+    renderer.domElement.addEventListener('click', onMouseClick);
 
     // --- Анимация ---
     function animate() {
@@ -155,11 +180,12 @@
       star.rotation.y += 0.002;
 
       // Движение планет
-      planets.forEach(p => {
-        p.angle += p.speed;
-        p.mesh.position.x = Math.cos(p.angle) * p.radius;
-        p.mesh.position.z = Math.sin(p.angle) * p.radius;
-        p.mesh.rotation.y += 0.005;
+      planets.forEach(planet => {
+        const data = planet.userData;
+        data.angle += data.speed;
+        planet.position.x = Math.cos(data.angle) * data.radius;
+        planet.position.z = Math.sin(data.angle) * data.radius;
+        planet.rotation.y += 0.005;
       });
 
       renderer.render(scene, camera);
@@ -171,11 +197,6 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    // --- Дополнительно: следим за сменой темы Telegram ---
-    tg.onEvent('themeChanged', () => {
-      document.body.style.background = tg.themeParams.bg_color || '#000';
     });
   </script>
 </body>
